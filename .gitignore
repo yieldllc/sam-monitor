@@ -1,0 +1,19 @@
+# Binaries
+/sam-monitor
+/bin/
+/out/
+
+# Test artifacts
+*.test
+*.out
+coverage.txt
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local env
+.env
+.env.local
