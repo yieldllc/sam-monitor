@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/yieldllc/sam-monitor/internal/db"
 )
 
 func main() {
@@ -21,6 +23,20 @@ func main() {
 	if addr == "" {
 		addr = ":8080"
 	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		slog.Error("DATABASE_URL is required")
+		os.Exit(1)
+	}
+
+	pool, err := db.Open(ctx, dsn)
+	if err != nil {
+		slog.Error("db open", "err", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+	slog.Info("db connected + migrated")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
