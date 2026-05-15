@@ -12,6 +12,7 @@ import (
 	"github.com/yieldllc/sam-monitor/internal/alert"
 	"github.com/yieldllc/sam-monitor/internal/db"
 	"github.com/yieldllc/sam-monitor/internal/poller"
+	"github.com/yieldllc/sam-monitor/internal/regstatus"
 	"github.com/yieldllc/sam-monitor/internal/sam"
 	"github.com/yieldllc/sam-monitor/internal/web"
 )
@@ -60,6 +61,14 @@ func main() {
 	go runTicker(ctx, "opp-poller", 4*time.Hour, func(c context.Context) {
 		if err := pol.PollAll(c); err != nil {
 			slog.Warn("opp poll", "err", err)
+		}
+	})
+
+	// Registration status tracker — 6h cadence.
+	tracker := &regstatus.Tracker{DB: pool, SAM: samc, Alerter: alerter}
+	go runTicker(ctx, "regstatus-tracker", 6*time.Hour, func(c context.Context) {
+		if err := tracker.PollAll(c); err != nil {
+			slog.Warn("regstatus poll", "err", err)
 		}
 	})
 
