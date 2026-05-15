@@ -1,0 +1,37 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{.Title}} — Yield SAM Monitor</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    nav a { margin-right: 1em; }
+    .pill { padding: .2em .6em; border-radius: .5em; font-size: .8em; display: inline-block; }
+    .pill.new        { background: #ffe; }
+    .pill.interested { background: #ffd; }
+    .pill.pursuing   { background: #cfc; }
+    .pill.submitted  { background: #cce; }
+    .pill.ignore     { background: #eee; color: #888; }
+    .pill.active     { background: #cfc; }
+    .pill.pending    { background: #ffe; }
+    table th, table td { font-size: .92em; }
+    .muted { color: #888; }
+  </style>
+</head>
+<body>
+<nav class="container">
+  <strong>Yield SAM</strong>
+  <a href="/">Opps</a>
+  <a href="/primes">Primes</a>
+  <a href="/searches">Searches</a>
+  <a href="/status">Status</a>
+  <a href="/health">Health</a>
+</nav>
+<main class="container">
+  {{template "content" .}}
+</main>
+</body>
+</html>
+{{end}}

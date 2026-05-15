@@ -1,0 +1,30 @@
+{{define "content"}}
+<h2>Saved searches</h2>
+{{if .Searches}}
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Enabled</th>
+      <th>Query</th>
+      <th>Last polled</th>
+      <th>Created</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Searches}}
+    <tr>
+      <td><strong>{{.Name}}</strong></td>
+      <td>{{if .Enabled}}yes{{else}}<span class="muted">no</span>{{end}}</td>
+      <td><code style="font-size:.8em">{{.QueryPretty}}</code></td>
+      <td>{{if .LastPolledAt}}{{.LastPolledAt.Format "2006-01-02 15:04"}}{{else}}<span class="muted">never</span>{{end}}</td>
+      <td>{{.CreatedAt.Format "2006-01-02"}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="muted">No saved searches yet.</p>
+{{end}}
+{{end}}
+{{template "layout" .}}

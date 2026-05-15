@@ -13,6 +13,7 @@ import (
 	"github.com/yieldllc/sam-monitor/internal/db"
 	"github.com/yieldllc/sam-monitor/internal/poller"
 	"github.com/yieldllc/sam-monitor/internal/sam"
+	"github.com/yieldllc/sam-monitor/internal/web"
 )
 
 func main() {
@@ -62,11 +63,18 @@ func main() {
 		}
 	})
 
+	webSrv, err := web.New(pool)
+	if err != nil {
+		slog.Error("web init", "err", err)
+		os.Exit(1)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+	webSrv.Routes(mux)
 
 	srv := &http.Server{
 		Addr:              addr,

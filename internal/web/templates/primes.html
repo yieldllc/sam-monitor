@@ -1,0 +1,34 @@
+{{define "content"}}
+<h2>Prime POCs</h2>
+{{if .Primes}}
+<table>
+  <thead>
+    <tr>
+      <th>Prime</th>
+      <th>Contact</th>
+      <th>Programs</th>
+      <th>Notes</th>
+      <th>Added</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Primes}}
+    <tr>
+      <td><strong>{{.Prime}}</strong></td>
+      <td>
+        {{if .ContactName}}{{.ContactName}}<br>{{end}}
+        {{if .ContactEmail}}<a href="mailto:{{.ContactEmail}}">{{.ContactEmail}}</a><br>{{end}}
+        {{if .ContactURL}}<a href="{{.ContactURL}}" target="_blank" rel="noopener">{{.ContactURL}}</a>{{end}}
+      </td>
+      <td>{{range $i, $p := .Programs}}{{if $i}}, {{end}}{{$p}}{{end}}</td>
+      <td>{{.Notes}}</td>
+      <td>{{.AddedAt.Format "2006-01-02"}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="muted">No primes seeded yet.</p>
+{{end}}
+{{end}}
+{{template "layout" .}}

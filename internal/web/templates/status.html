@@ -1,0 +1,51 @@
+{{define "content"}}
+<h2>Registration Status</h2>
+{{if .Entities}}
+<table>
+  <thead>
+    <tr>
+      <th>UEI</th>
+      <th>Name</th>
+      <th>Status</th>
+      <th>CAGE</th>
+      <th>Reg Date</th>
+      <th>Expires</th>
+      <th>Last checked</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Entities}}
+    <tr>
+      <td><code>{{.UEI}}</code></td>
+      <td>{{.Name}}</td>
+      <td><span class="pill {{if eq .Status "Active"}}active{{else}}pending{{end}}">{{.Status}}</span></td>
+      <td>{{if .CAGE}}{{.CAGE}}{{else}}<em class="muted">pending</em>{{end}}</td>
+      <td>{{if .RegDate}}{{.RegDate.Format "2006-01-02"}}{{else}}<span class="muted">—</span>{{end}}</td>
+      <td>{{if .ExpDate}}{{.ExpDate.Format "2006-01-02"}}{{else}}<span class="muted">—</span>{{end}}</td>
+      <td>{{if .LastChecked}}{{.LastChecked.Format "2006-01-02 15:04"}}{{else}}<span class="muted">never</span>{{end}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="muted">No entities being tracked. Seed via migration <code>0002_regstatus.sql</code>.</p>
+{{end}}
+
+<h3>Recent status changes</h3>
+{{if .Events}}
+<ul>
+  {{range .Events}}
+  <li>
+    <strong>{{.ObservedAt.Format "2006-01-02 15:04"}}</strong> —
+    <code>{{.UEI}}</code>:
+    {{if .OldStatus}}{{.OldStatus}}{{else}}<em>(none)</em>{{end}}
+    → <strong>{{.NewStatus}}</strong>
+    {{if .NewCAGE}}(CAGE: {{.NewCAGE}}){{end}}
+  </li>
+  {{end}}
+</ul>
+{{else}}
+<p class="muted">No status changes recorded yet.</p>
+{{end}}
+{{end}}
+{{template "layout" .}}

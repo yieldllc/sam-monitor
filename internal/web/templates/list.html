@@ -1,0 +1,47 @@
+{{define "content"}}
+<h2>Opportunities</h2>
+<form>
+  <label for="status">Status filter</label>
+  <select id="status" name="status" hx-get="/" hx-target="body" hx-push-url="true" hx-trigger="change">
+    <option value=""           {{if eq .Status ""}}selected{{end}}>All</option>
+    <option value="new"        {{if eq .Status "new"}}selected{{end}}>New</option>
+    <option value="interested" {{if eq .Status "interested"}}selected{{end}}>Interested</option>
+    <option value="pursuing"   {{if eq .Status "pursuing"}}selected{{end}}>Pursuing</option>
+    <option value="submitted"  {{if eq .Status "submitted"}}selected{{end}}>Submitted</option>
+    <option value="ignore"     {{if eq .Status "ignore"}}selected{{end}}>Ignore</option>
+  </select>
+</form>
+
+{{if .Opps}}
+<table>
+  <thead>
+    <tr>
+      <th>Title</th>
+      <th>Agency</th>
+      <th>NAICS</th>
+      <th>Set-aside</th>
+      <th>Posted</th>
+      <th>Due</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Opps}}
+    <tr>
+      <td><a href="/opp/{{.NoticeID}}">{{.Title}}</a></td>
+      <td>{{.Agency}}</td>
+      <td>{{if .NAICS}}{{index .NAICS 0}}{{end}}</td>
+      <td>{{.SetAside}}</td>
+      <td>{{if .PostedAt}}{{.PostedAt.Format "2006-01-02"}}{{end}}</td>
+      <td>{{if .ResponseDueAt}}{{.ResponseDueAt.Format "2006-01-02"}}{{else}}<span class="muted">—</span>{{end}}</td>
+      <td><span class="pill {{.Status}}">{{.Status}}</span></td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+<p class="muted">{{len .Opps}} opportunities shown.</p>
+{{else}}
+<p class="muted">No opportunities yet. The poller runs every 4h and after each startup.</p>
+{{end}}
+{{end}}
+{{template "layout" .}}
