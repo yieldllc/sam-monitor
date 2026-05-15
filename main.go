@@ -9,7 +9,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/yieldllc/sam-monitor/internal/alert"
 	"github.com/yieldllc/sam-monitor/internal/db"
+	"github.com/yieldllc/sam-monitor/internal/poller"
+	"github.com/yieldllc/sam-monitor/internal/sam"
 )
 
 func main() {
@@ -38,6 +41,27 @@ func main() {
 	defer pool.Close()
 	slog.Info("db connected + migrated")
 
+	samc := &sam.Client{
+		APIKey: os.Getenv("SAM_API_KEY"),
+		HTTP:   &http.Client{Timeout: 30 * time.Second},
+	}
+	if samc.APIKey == "" {
+		slog.Warn("SAM_API_KEY is empty — pollers will fail")
+	}
+
+	alerter := alert.FromEnv()
+	if alerter == nil {
+		slog.Warn("no SMTP_HOST — alerting disabled")
+	}
+
+	// Opportunity poller — 4h cadence. Initial poll runs on startup.
+	pol := &poller.Poller{DB: pool, SAM: samc, Alerter: alerter}
+	go runTicker(ctx, "opp-poller", 4*time.Hour, func(c context.Context) {
+		if err := pol.PollAll(c); err != nil {
+			slog.Warn("opp poll", "err", err)
+		}
+	})
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -62,4 +86,22 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
+}
+
+// runTicker fires fn immediately, then every `interval` until ctx is cancelled.
+// fn is called with the parent ctx so it cancels on shutdown.
+func runTicker(ctx context.Context, name string, interval time.Duration, fn func(context.Context)) {
+	slog.Info("ticker start", "name", name, "interval", interval)
+	fn(ctx)
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("ticker stop", "name", name)
+			return
+		case <-t.C:
+			fn(ctx)
+		}
+	}
 }
