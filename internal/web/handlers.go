@@ -28,9 +28,9 @@ import (
 var tplFS embed.FS
 
 // pageNames is the list of standalone page templates. Each is cloned from the
-// base set (layout + statusPill partial) at startup so their {{define}} blocks
-// stay scoped.
-var pageNames = []string{"list.html", "opp.html", "primes.html", "searches.html", "status.html"}
+// base set (layout + statusPill partial + topicPill partial) at startup so
+// their {{define}} blocks stay scoped.
+var pageNames = []string{"list.html", "opp.html", "primes.html", "searches.html", "status.html", "topics.html"}
 
 // validStatus is the closed set of opportunity statuses.
 var validStatus = map[string]bool{
@@ -39,6 +39,14 @@ var validStatus = map[string]bool{
 
 // StatusOptions in display order.
 var StatusOptions = []string{"new", "interested", "pursuing", "submitted", "ignore"}
+
+// validTopicStatus is the closed set of SBIR/STTR topic statuses.
+var validTopicStatus = map[string]bool{
+	"new": true, "reviewing": true, "submitted": true, "closed": true,
+}
+
+// TopicStatusOptions in display order.
+var TopicStatusOptions = []string{"new", "reviewing", "submitted", "closed"}
 
 // Server holds the DB pool and precompiled templates.
 type Server struct {
@@ -50,7 +58,11 @@ type Server struct {
 // cloning a fresh template set for each page so per-page {{define}}s don't
 // stomp on each other.
 func New(db *pgxpool.Pool) (*Server, error) {
-	base, err := template.ParseFS(tplFS, "templates/layout.html", "templates/status_pill.html")
+	base, err := template.ParseFS(tplFS,
+		"templates/layout.html",
+		"templates/status_pill.html",
+		"templates/topic_pill.html",
+	)
 	if err != nil {
 		return nil, fmt.Errorf("parse base: %w", err)
 	}
@@ -78,6 +90,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /primes", s.primes)
 	mux.HandleFunc("GET /searches", s.searches)
 	mux.HandleFunc("GET /status", s.status)
+	mux.HandleFunc("GET /topics", s.topics)
+	mux.HandleFunc("POST /topics/{id}/status", s.setTopicStatus)
 }
 
 func (s *Server) render(w http.ResponseWriter, page string, data any) {
@@ -393,6 +407,95 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		Entities []Entity
 		Events   []StatusEvent
 	}{Title: "Registration Status", Entities: entities, Events: events})
+}
+
+// ---------------------------------------------------------------------------
+// SBIR/STTR topics
+// ---------------------------------------------------------------------------
+
+// Topic is the row shape rendered on the /topics list.
+type Topic struct {
+	ID          string
+	Source      string
+	TopicCode   string
+	Title       string
+	Agency      string
+	Phase       string
+	OpenAt      *time.Time
+	CloseAt     *time.Time
+	URL         string
+	Keywords    []string
+	Status      string
+	LastSeenAt  time.Time
+	DaysToClose int  // negative when closed; computed at render time
+	Urgent      bool // CloseAt within 14 days
+}
+
+func (s *Server) topics(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.DB.Query(r.Context(), `
+		SELECT id::text, source, topic_code, title, COALESCE(agency,''),
+		       COALESCE(phase,''), open_at, close_at, COALESCE(url,''),
+		       COALESCE(keywords_hit, ARRAY[]::TEXT[]), status, last_seen_at
+		FROM topic
+		ORDER BY (close_at IS NULL), close_at ASC, last_seen_at DESC
+		LIMIT 500
+	`)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	defer rows.Close()
+
+	now := time.Now()
+	var topics []Topic
+	for rows.Next() {
+		var t Topic
+		if err := rows.Scan(&t.ID, &t.Source, &t.TopicCode, &t.Title, &t.Agency,
+			&t.Phase, &t.OpenAt, &t.CloseAt, &t.URL, &t.Keywords, &t.Status, &t.LastSeenAt); err != nil {
+			slog.Warn("topics scan", "err", err)
+			continue
+		}
+		if t.CloseAt != nil {
+			t.DaysToClose = int(t.CloseAt.Sub(now).Hours() / 24)
+			t.Urgent = t.DaysToClose >= 0 && t.DaysToClose < 14
+		}
+		topics = append(topics, t)
+	}
+
+	s.render(w, "topics.html", struct {
+		Title         string
+		Topics        []Topic
+		StatusOptions []string
+	}{Title: "SBIR/STTR Topics", Topics: topics, StatusOptions: TopicStatusOptions})
+}
+
+func (s *Server) setTopicStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	status := r.FormValue("status")
+	if !validTopicStatus[status] {
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
+	tag, err := s.DB.Exec(r.Context(),
+		`UPDATE topic SET status = $1 WHERE id = $2`, status, id)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	// HTMX partial: return just the pill.
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	t := s.pages["topics.html"]
+	if err := t.ExecuteTemplate(w, "topicPill", Topic{Status: status}); err != nil {
+		slog.Error("render topicPill", "err", err)
+	}
 }
 
 // ---------------------------------------------------------------------------

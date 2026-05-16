@@ -1,0 +1,61 @@
+{{define "content"}}
+<h2>SBIR/STTR Open Topics</h2>
+<p class="muted">Sorted by close date (earliest first). Red rows close in &lt; 14 days.</p>
+
+{{if .Topics}}
+<table>
+  <thead>
+    <tr>
+      <th>Topic</th>
+      <th>Agency</th>
+      <th>Source</th>
+      <th>Phase / Program</th>
+      <th>Close</th>
+      <th>Keywords</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Topics}}
+    <tr{{if .Urgent}} style="background:#fee"{{end}}>
+      <td>
+        {{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener"><strong>{{.Title}}</strong></a>{{else}}<strong>{{.Title}}</strong>{{end}}
+        <br><code class="muted">{{.TopicCode}}</code>
+      </td>
+      <td>{{.Agency}}</td>
+      <td><code>{{.Source}}</code></td>
+      <td>{{.Phase}}</td>
+      <td>
+        {{if .CloseAt}}
+          {{.CloseAt.Format "2006-01-02"}}<br>
+          <small{{if .Urgent}} style="color:#a00;font-weight:bold"{{else}} class="muted"{{end}}>
+            {{if lt .DaysToClose 0}}closed{{else}}{{.DaysToClose}}d left{{end}}
+          </small>
+        {{else}}<span class="muted">—</span>{{end}}
+      </td>
+      <td>
+        {{range .Keywords}}<span class="pill" style="background:#eef;color:#226">{{.}}</span> {{end}}
+      </td>
+      <td>
+        <span id="topic-pill-{{.ID}}">{{template "topicPill" .}}</span>
+        <select name="status"
+                hx-post="/topics/{{.ID}}/status"
+                hx-target="#topic-pill-{{.ID}}"
+                hx-swap="innerHTML"
+                hx-trigger="change">
+          {{$cur := .Status}}
+          {{range $s := $.StatusOptions}}
+            <option value="{{$s}}" {{if eq $s $cur}}selected{{end}}>{{$s}}</option>
+          {{end}}
+        </select>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+<p class="muted">{{len .Topics}} topics shown.</p>
+{{else}}
+<p class="muted">No matching open SBIR/STTR topics yet. The poller runs every 12h and on startup; keywords are stored in <code>topic_keyword</code>.</p>
+{{end}}
+{{end}}
+{{template "layout" .}}
