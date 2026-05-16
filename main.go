@@ -14,6 +14,7 @@ import (
 	"github.com/yieldllc/sam-monitor/internal/poller"
 	"github.com/yieldllc/sam-monitor/internal/regstatus"
 	"github.com/yieldllc/sam-monitor/internal/sam"
+	"github.com/yieldllc/sam-monitor/internal/topics"
 	"github.com/yieldllc/sam-monitor/internal/web"
 )
 
@@ -69,6 +70,27 @@ func main() {
 	go runTicker(ctx, "regstatus-tracker", 6*time.Hour, func(c context.Context) {
 		if err := tracker.PollAll(c); err != nil {
 			slog.Warn("regstatus poll", "err", err)
+		}
+	})
+
+	// SBIR/STTR open-topic poller — 12h cadence. SAM_API_KEY is reused on
+	// SBIR.gov requests when present (the upstream does not require it).
+	// The DSIP secondary source is enabled by default and degrades to
+	// SBIR-only on any failure.
+	topicPoller := &topics.Poller{
+		DB: pool,
+		SBIR: &topics.SBIRClient{
+			APIKey: os.Getenv("SAM_API_KEY"),
+			HTTP:   &http.Client{Timeout: 30 * time.Second},
+		},
+		DSIP: &topics.DSIPClient{
+			HTTP: &http.Client{Timeout: 30 * time.Second},
+		},
+		Alerter: alerter,
+	}
+	go runTicker(ctx, "topic-poller", 12*time.Hour, func(c context.Context) {
+		if err := topicPoller.PollAll(c); err != nil {
+			slog.Warn("topic poll", "err", err)
 		}
 	})
 
