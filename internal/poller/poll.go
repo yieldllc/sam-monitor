@@ -102,26 +102,56 @@ func (p *Poller) pollOne(ctx context.Context, id, name string, queryJSON []byte,
 	}
 	v.Set("postedFrom", from.Format("01/02/2006"))
 	v.Set("postedTo", time.Now().Format("01/02/2006"))
-	v.Set("limit", "100")
+
+	// Paginate through results: SAM caps a single response at 1000, and we
+	// cap total ingest at 5000 per search per cycle so a misconfigured filter
+	// can't burn our 1000 req/hr API budget.
+	const (
+		pageSize    = 1000
+		maxPerCycle = 5000
+	)
+	v.Set("limit", fmt.Sprintf("%d", pageSize))
 
 	slog.Info("poll search", "name", name, "from", from.Format("2006-01-02"))
-	r, err := p.SAM.Search(ctx, v)
-	if err != nil {
-		return fmt.Errorf("sam search: %w", err)
-	}
-	slog.Info("poll search result", "name", name, "total", r.TotalRecords, "page", len(r.OpportunitiesData))
 
-	var inserted []sam.Opportunity
-	for _, opp := range r.OpportunitiesData {
-		ins, err := p.upsert(ctx, id, opp)
+	var (
+		inserted []sam.Opportunity
+		fetched  int
+		total    int
+	)
+	for offset := 0; ; offset += pageSize {
+		v.Set("offset", fmt.Sprintf("%d", offset))
+		r, err := p.SAM.Search(ctx, v)
 		if err != nil {
-			slog.Warn("upsert opp", "notice_id", opp.NoticeID, "err", err)
-			continue
+			return fmt.Errorf("sam search (offset %d): %w", offset, err)
 		}
-		if ins {
-			inserted = append(inserted, opp)
+		total = r.TotalRecords
+		page := len(r.OpportunitiesData)
+		slog.Info("poll search page",
+			"name", name, "offset", offset, "page", page, "total", total)
+
+		for _, opp := range r.OpportunitiesData {
+			ins, err := p.upsert(ctx, id, opp)
+			if err != nil {
+				slog.Warn("upsert opp", "notice_id", opp.NoticeID, "err", err)
+				continue
+			}
+			if ins {
+				inserted = append(inserted, opp)
+			}
+		}
+		fetched += page
+
+		if page < pageSize || offset+pageSize >= total {
+			break // last page reached
+		}
+		if fetched >= maxPerCycle {
+			slog.Warn("poll search truncated at maxPerCycle",
+				"name", name, "fetched", fetched, "total", total)
+			break
 		}
 	}
+	slog.Info("poll search done", "name", name, "fetched", fetched, "total", total, "inserted", len(inserted))
 
 	if _, err := p.DB.Exec(ctx, `UPDATE saved_search SET last_polled_at = now() WHERE id = $1`, id); err != nil {
 		slog.Warn("update last_polled_at", "name", name, "err", err)
