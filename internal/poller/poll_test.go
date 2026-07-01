@@ -49,3 +49,44 @@ func TestSetAsideExcluded_NoRules(t *testing.T) {
 		t.Error("no exclude rules should never exclude")
 	}
 }
+
+func TestPscIncluded(t *testing.T) {
+	// Software allow-list: IT services (D*) + software/security products (7A/7B/7J).
+	allow := []string{"D", "7A", "7B", "7J"}
+
+	tests := []struct {
+		name string
+		code string
+		want bool
+	}{
+		{"IT services DA10 kept", "DA10", true},
+		{"IT services D302 kept", "D302", true},
+		{"business app software 7A21 kept", "7A21", true},
+		{"system software 7B20 kept", "7B20", true},
+		{"IT security 7J20 kept", "7J20", true},
+		{"lowercase code still matches", "da01", true},
+		{"HVAC refrigeration PSC 41 dropped", "41", false},
+		{"air-conditioning 4120 dropped", "4120", false},
+		{"medical 6525 dropped", "6525", false},
+		{"IT hardware 7E (servers) dropped by this list", "7E20", false},
+		{"empty code dropped when allow-list set", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pscIncluded(tt.code, allow); got != tt.want {
+				t.Errorf("pscIncluded(%q) = %v, want %v", tt.code, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPscIncluded_NoAllowList(t *testing.T) {
+	// With no allow-list, every code (even empty) passes through.
+	if !pscIncluded("41", nil) {
+		t.Error("empty allow-list should include everything")
+	}
+	if !pscIncluded("", nil) {
+		t.Error("empty allow-list should include empty code too")
+	}
+}

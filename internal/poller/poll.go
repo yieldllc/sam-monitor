@@ -42,7 +42,35 @@ type SavedSearchQuery struct {
 	// win (e.g. Buy Indian IEE/ISBEE, 8(a), HUBZone, SDVOSB). A single "Indian"
 	// rule covers both Buy Indian Act descriptions.
 	ExcludeSetAside []string `json:"excludeSetAside"`
-	NoticeType      []string `json:"noticeType"`
+	// IncludePSC, when non-empty, keeps only notices whose Product Service Code
+	// (classificationCode) starts with one of these prefixes. This is the
+	// reliable "software, not HVAC" signal: SAM.gov's free-text q param is
+	// unreliable (it silently returns the whole feed), but PSC group "D"
+	// (IT & telecom services) and "7A"/"7B"/"7J" (software) cleanly select IT
+	// work. Empty = no PSC filter. Prefixes are matched case-insensitively.
+	IncludePSC []string `json:"includePSC"`
+	NoticeType []string `json:"noticeType"`
+}
+
+// pscIncluded reports whether a Product Service Code matches the allow-list by
+// case-insensitive prefix. An empty allow-list includes everything. An empty
+// code against a non-empty allow-list is excluded — we can't confirm it's in
+// scope, and unclassified notices are exactly the firehose noise we're cutting.
+func pscIncluded(code string, prefixes []string) bool {
+	if len(prefixes) == 0 {
+		return true
+	}
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code == "" {
+		return false
+	}
+	for _, p := range prefixes {
+		p = strings.ToUpper(strings.TrimSpace(p))
+		if p != "" && strings.HasPrefix(code, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // setAsideExcluded reports whether desc (SAM.gov's typeOfSetAsideDescription)
@@ -163,6 +191,14 @@ func (p *Poller) pollOne(ctx context.Context, id, name string, queryJSON []byte,
 			// exclusion, so drop ineligible ones (e.g. Buy Indian) here before
 			// they ever hit the DB or an alert email.
 			if setAsideExcluded(opp.SetAside, q.ExcludeSetAside) {
+				excluded++
+				continue
+			}
+			// Subject-matter allow-list: keep only IT/software PSCs. SAM.gov's
+			// free-text q param is unreliable, so a NAICS-only or keyword-only
+			// search leaks HVAC/equipment/medical notices; the PSC prefix is the
+			// dependable software signal.
+			if !pscIncluded(opp.ClassificationCode, q.IncludePSC) {
 				excluded++
 				continue
 			}
