@@ -32,10 +32,37 @@ type Poller struct {
 // SavedSearchQuery is the JSONB schema we store in saved_search.query.
 // All fields are optional; empty/missing values mean "no filter for this dimension".
 type SavedSearchQuery struct {
-	NAICS      []string `json:"naics"`
-	Keywords   string   `json:"keywords"`
-	SetAside   []string `json:"setAside"`
-	NoticeType []string `json:"noticeType"`
+	NAICS    []string `json:"naics"`
+	Keywords string   `json:"keywords"`
+	SetAside []string `json:"setAside"`
+	// ExcludeSetAside drops notices whose set-aside description contains any of
+	// these substrings (case-insensitive), applied client-side after fetch.
+	// SAM.gov's typeOfSetAside param is inclusion-only, so this is the only way
+	// to keep unrestricted + eligible set-asides while dropping ones we can't
+	// win (e.g. Buy Indian IEE/ISBEE, 8(a), HUBZone, SDVOSB). A single "Indian"
+	// rule covers both Buy Indian Act descriptions.
+	ExcludeSetAside []string `json:"excludeSetAside"`
+	NoticeType      []string `json:"noticeType"`
+}
+
+// setAsideExcluded reports whether desc (SAM.gov's typeOfSetAsideDescription)
+// matches any exclude rule as a case-insensitive substring. An empty desc —
+// i.e. an unrestricted / full-and-open notice — is never excluded.
+func setAsideExcluded(desc string, excludes []string) bool {
+	if desc == "" || len(excludes) == 0 {
+		return false
+	}
+	d := strings.ToLower(desc)
+	for _, ex := range excludes {
+		ex = strings.TrimSpace(ex)
+		if ex == "" {
+			continue
+		}
+		if strings.Contains(d, strings.ToLower(ex)) {
+			return true
+		}
+	}
+	return false
 }
 
 // PollAll fetches every enabled saved_search and polls it. Errors from one
@@ -117,6 +144,7 @@ func (p *Poller) pollOne(ctx context.Context, id, name string, queryJSON []byte,
 	var (
 		inserted []sam.Opportunity
 		fetched  int
+		excluded int
 		total    int
 	)
 	for offset := 0; ; offset += pageSize {
@@ -131,6 +159,13 @@ func (p *Poller) pollOne(ctx context.Context, id, name string, queryJSON []byte,
 			"name", name, "offset", offset, "page", page, "total", total)
 
 		for _, opp := range r.OpportunitiesData {
+			// Client-side exclusion: SAM.gov can't filter set-asides by
+			// exclusion, so drop ineligible ones (e.g. Buy Indian) here before
+			// they ever hit the DB or an alert email.
+			if setAsideExcluded(opp.SetAside, q.ExcludeSetAside) {
+				excluded++
+				continue
+			}
 			ins, err := p.upsert(ctx, id, opp)
 			if err != nil {
 				slog.Warn("upsert opp", "notice_id", opp.NoticeID, "err", err)
@@ -151,7 +186,7 @@ func (p *Poller) pollOne(ctx context.Context, id, name string, queryJSON []byte,
 			break
 		}
 	}
-	slog.Info("poll search done", "name", name, "fetched", fetched, "total", total, "inserted", len(inserted))
+	slog.Info("poll search done", "name", name, "fetched", fetched, "excluded", excluded, "total", total, "inserted", len(inserted))
 
 	if _, err := p.DB.Exec(ctx, `UPDATE saved_search SET last_polled_at = now() WHERE id = $1`, id); err != nil {
 		slog.Warn("update last_polled_at", "name", name, "err", err)
