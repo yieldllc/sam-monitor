@@ -18,6 +18,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -125,20 +126,35 @@ type Opp struct {
 	URL            string
 	Description    string
 	Status         string
+	Expired        bool
 }
 
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
+	// due filter: "open" (default) hides notices whose response deadline has
+	// already passed — you can't bid an expired solicitation. "all" shows them.
+	// Notices with no deadline (sources sought, special notices) are always kept.
+	due := r.URL.Query().Get("due")
+	if due == "" {
+		due = "open"
+	}
 
 	q := `SELECT notice_id, COALESCE(solicitation_no,''), title, COALESCE(agency,''),
 	             COALESCE(naics, ARRAY[]::TEXT[]), COALESCE(set_aside,''),
 	             COALESCE(notice_type,''), posted_at, response_due_at,
 	             COALESCE(url,''), status
 	      FROM opportunity`
+	var conds []string
 	var args []any
 	if status != "" {
-		q += ` WHERE status = $1`
 		args = append(args, status)
+		conds = append(conds, fmt.Sprintf("status = $%d", len(args)))
+	}
+	if due == "open" {
+		conds = append(conds, "(response_due_at >= now() OR response_due_at IS NULL)")
+	}
+	if len(conds) > 0 {
+		q += " WHERE " + strings.Join(conds, " AND ")
 	}
 	q += ` ORDER BY posted_at DESC NULLS LAST, first_seen_at DESC LIMIT 500`
 
@@ -149,6 +165,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
+	now := time.Now()
 	var opps []Opp
 	for rows.Next() {
 		var o Opp
@@ -157,6 +174,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("list scan", "err", err)
 			continue
 		}
+		o.Expired = o.ResponseDueAt != nil && o.ResponseDueAt.Before(now)
 		opps = append(opps, o)
 	}
 
@@ -164,7 +182,8 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		Title  string
 		Opps   []Opp
 		Status string
-	}{Title: "Opportunities", Opps: opps, Status: status})
+		Due    string
+	}{Title: "Opportunities", Opps: opps, Status: status, Due: due})
 }
 
 // ---------------------------------------------------------------------------

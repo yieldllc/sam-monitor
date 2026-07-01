@@ -1,15 +1,22 @@
 {{define "content"}}
 <h2>Opportunities</h2>
-<form>
-  <label for="status">Status filter</label>
-  <select id="status" name="status" hx-get="/" hx-target="body" hx-push-url="true" hx-trigger="change">
-    <option value=""           {{if eq .Status ""}}selected{{end}}>All</option>
-    <option value="new"        {{if eq .Status "new"}}selected{{end}}>New</option>
-    <option value="interested" {{if eq .Status "interested"}}selected{{end}}>Interested</option>
-    <option value="pursuing"   {{if eq .Status "pursuing"}}selected{{end}}>Pursuing</option>
-    <option value="submitted"  {{if eq .Status "submitted"}}selected{{end}}>Submitted</option>
-    <option value="ignore"     {{if eq .Status "ignore"}}selected{{end}}>Ignore</option>
-  </select>
+<form class="grid">
+  <label for="status">Status filter
+    <select id="status" name="status" hx-get="/" hx-include="closest form" hx-target="body" hx-push-url="true" hx-trigger="change">
+      <option value=""           {{if eq .Status ""}}selected{{end}}>All</option>
+      <option value="new"        {{if eq .Status "new"}}selected{{end}}>New</option>
+      <option value="interested" {{if eq .Status "interested"}}selected{{end}}>Interested</option>
+      <option value="pursuing"   {{if eq .Status "pursuing"}}selected{{end}}>Pursuing</option>
+      <option value="submitted"  {{if eq .Status "submitted"}}selected{{end}}>Submitted</option>
+      <option value="ignore"     {{if eq .Status "ignore"}}selected{{end}}>Ignore</option>
+    </select>
+  </label>
+  <label for="due">Deadline
+    <select id="due" name="due" hx-get="/" hx-include="closest form" hx-target="body" hx-push-url="true" hx-trigger="change">
+      <option value="open" {{if eq .Due "open"}}selected{{end}}>Open &amp; undated</option>
+      <option value="all"  {{if eq .Due "all"}}selected{{end}}>All (incl. expired)</option>
+    </select>
+  </label>
 </form>
 
 {{if .Opps}}
@@ -33,7 +40,7 @@
       <td>{{if .NAICS}}{{index .NAICS 0}}{{end}}</td>
       <td>{{.SetAside}}</td>
       <td>{{if .PostedAt}}{{.PostedAt.Format "2006-01-02"}}{{end}}</td>
-      <td>{{if .ResponseDueAt}}{{.ResponseDueAt.Format "2006-01-02"}}{{else}}<span class="muted">—</span>{{end}}</td>
+      <td>{{if .ResponseDueAt}}{{if .Expired}}<span class="muted" title="deadline passed"><s>{{.ResponseDueAt.Format "2006-01-02"}}</s> expired</span>{{else}}{{.ResponseDueAt.Format "2006-01-02"}}{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
       <td><span class="pill {{.Status}}">{{.Status}}</span></td>
     </tr>
     {{end}}
